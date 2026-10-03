@@ -1,6 +1,6 @@
 module github.com/connordoman/escpos
 
-go 1.27.1
+go 1.26.0
 
 require (
 	github.com/google/gousb v1.1.3

@@ -1,9 +1,14 @@
 # escpos
 
 A Go package for Rongta RP325/RP326/RP327/RP328 thermal receipt printers (and
-other ESC/POS printers). It implements every command in
-[`reference/RP325&RP326&RP327&RP328-Command Set (RT V1.0).pdf`](reference/)
-and talks to the printer over USB, Ethernet or serial.
+other ESC/POS printers). It implements every command in Rongta's
+*RP325\RP326\RP327\RP328 Command Set* (RT V1.0) and talks to the printer
+over USB, Ethernet or serial.
+
+The command set comes on the flash drive bundled with the printer. Rongta
+doesn't publish it on its own sites ([rongtatech.com](https://www.rongtatech.com/user-manual/)
+only offers user manuals), but a copy is hosted on
+[ManualsLib](https://www.manualslib.com/manual/3423402/Rongta-Technology-Rp325.html).
 
 > **Validated hardware:** this package has only been tested on a **Rongta
 > RP326** (80 mm, USB; firmware "7.03 ESC/POS", which identifies itself as an
