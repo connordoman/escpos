@@ -31,7 +31,7 @@ func Example() {
 	p.Columns("Total", "$7.75")
 	p.SetEmphasis(false)
 	p.SetAlign(escpos.AlignCenter)
-	p.PrintQRCode("https://example.com/r/1234", 0, escpos.QRErrorM, 6)
+	p.PrintQRCode("https://example.com/r/1234", escpos.QRErrorM, 6)
 	p.FeedAndCut(0)
 
 	if _, err := p.Flush(context.Background()); err != nil {

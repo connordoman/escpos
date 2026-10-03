@@ -10,7 +10,7 @@
 //     the built-in usbprint driver.
 //
 // On Linux the kernel's usblp driver is detached automatically while the
-// connection is open. On Linux and Windows, escpos.OpenUSB detects and opens
+// connection is open; other platforms need no detaching. On Linux and Windows, escpos.OpenUSB detects and opens
 // the printer through the operating system's own driver without cgo, and is
 // usually the simpler choice there; this package is the way to go on macOS.
 //
@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/connordoman/escpos"
@@ -209,8 +210,14 @@ func describe(d *gousb.Device) escpos.USBPrinter {
 func (c *Conn) Info() escpos.USBPrinter { return c.info }
 
 func (c *Conn) setup(opts Options) error {
-	if err := c.dev.SetAutoDetach(true); err != nil {
-		return fmt.Errorf("usb: enabling kernel driver auto-detach: %w", err)
+	// Linux binds the usblp driver to printers, which must be detached
+	// before the interface can be claimed. macOS binds no driver, and
+	// detaching there needs root or a special entitlement, so it would only
+	// make claiming fail.
+	if runtime.GOOS == "linux" {
+		if err := c.dev.SetAutoDetach(true); err != nil {
+			return fmt.Errorf("usb: enabling kernel driver auto-detach: %w", err)
+		}
 	}
 	cfgNum := opts.Config
 	if cfgNum == 0 {

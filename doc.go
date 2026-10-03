@@ -25,6 +25,10 @@
 // [Builder.OpenCashDrawer] and [Printer.RealTimePulse] over any of the
 // transports above.
 //
+// This package has only been validated on a Rongta RP326 (firmware
+// "7.03 ESC/POS"). Some commands in the reference behave differently on that
+// printer; the README records which ones.
+//
 // Distances in this command set are given in motion units. With the default
 // motion units (see [Builder.SetMotionUnits]) one unit is 0.125 mm, which is
 // one dot on these 203 dpi printers.

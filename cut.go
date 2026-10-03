@@ -7,9 +7,9 @@ const (
 	// CutPartial cuts the paper leaving one point uncut.
 	CutPartial CutMode = 1
 
-	// CutFull is not listed in the RP32x reference, which says only partial
-	// cuts are available, but it is the standard ESC/POS full cut and was
-	// accepted by the printer this package was developed against.
+	// CutFull is the standard ESC/POS full cut. It is not in the RP32x
+	// reference, which says only partial cuts are available. On the RP326
+	// it makes the same partial cut as CutPartial.
 	CutFull CutMode = 0
 )
 
@@ -31,12 +31,12 @@ func (b *Builder) Cut(m CutMode) error {
 func (b *Builder) FeedAndCut(n uint8) { b.cmd(GS, 'V', 66, n) }
 
 // FeedAndFullCut is like [Builder.FeedAndCut] but requests a full cut
-// (GS V 65 n). It is not listed in the RP32x reference; printers without a
-// full cut make a partial cut instead.
+// (GS V 65 n). It is not in the RP32x reference. On the RP326, which has no
+// full cutter, it behaves exactly like FeedAndCut.
 func (b *Builder) FeedAndFullCut(n uint8) { b.cmd(GS, 'V', 65, n) }
 
 // CutImmediate cuts the paper with the single-byte legacy command (ESC i).
-// On this printer it makes a partial cut.
+// On the RP326 it makes a partial cut.
 func (b *Builder) CutImmediate() { b.cmd(ESC, 'i') }
 
 // PartialCutImmediate makes a partial cut with the single-byte legacy command

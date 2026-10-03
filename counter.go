@@ -55,6 +55,10 @@ type CounterModeB struct {
 // SetCounterModeB selects the counter range, step and value using decimal
 // parameters (GS C ; sa ; sb ; sn ; sr ; sc ;). The counting rules are the
 // same as for [Builder.SetCounterModeA].
+//
+// On the RP326, the first [Builder.PrintCounter] afterwards prints
+// Value + Step rather than Value. [Builder.SetCounter] does not have this
+// offset.
 func (b *Builder) SetCounterModeB(m CounterModeB) {
 	b.cmd(GS, 'C', ';')
 	field := func(v *uint64) {

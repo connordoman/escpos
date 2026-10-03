@@ -258,7 +258,7 @@ func (b *Builder) Select2DBarcodeType(t Barcode2DType) error {
 
 // Print2DBarcode prints a two-dimensional bar code of the type selected with
 // [Builder.Select2DBarcodeType] (ESC Z m n k dL dH d1...dn). The meaning of m,
-// n and k depends on the type; [Builder.PrintQRCode] and
+// n and k depends on the type; [Builder.PrintQRCodeESCZ] and
 // [Builder.PrintPDF417] validate them.
 func (b *Builder) Print2DBarcode(m, n, k byte, data string) error {
 	if len(data) < 1 || len(data) > 0xFFFF {
@@ -283,10 +283,14 @@ const (
 	QRErrorH QRErrorCorrection = 'H' // recovers 30% of data
 )
 
-// PrintQRCode prints a QR code (GS Z 1, then ESC Z). version is the symbol
-// version 1–40, or 0 to choose automatically (recommended); moduleSize is the
-// size of one module in dots, 1–8.
-func (b *Builder) PrintQRCode(data string, version uint8, ec QRErrorCorrection, moduleSize uint8) error {
+// PrintQRCodeESCZ prints a QR code using the reference's commands (GS Z 1,
+// then ESC Z). version is the symbol version 1–40, or 0 to choose
+// automatically; moduleSize is the size of one module in dots, 1–8.
+//
+// On the RP326 tested (firmware 7.03), GS Z 1 is ignored and this prints a
+// PDF417 symbol instead. Use [Builder.PrintQRCode] unless your firmware is
+// known to honour GS Z.
+func (b *Builder) PrintQRCodeESCZ(data string, version uint8, ec QRErrorCorrection, moduleSize uint8) error {
 	if version > 40 {
 		return invalid("ESC Z", "QR version %d out of range 0–40", version)
 	}

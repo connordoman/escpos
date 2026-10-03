@@ -24,19 +24,13 @@ func (b *Builder) OpenCashDrawer(pin DrawerPin) error {
 	return b.GeneratePulse(pin, 50, 250)
 }
 
-// Beep sounds the buzzer (ESC B n t): tone n of 1–9 for time t of 1–9. The
-// reference gives no units for either parameter.
+// Beep sounds the buzzer (ESC B n t), with n and t each from 1 to 9. The
+// reference calls n the tone and t the time but gives no units. On the RP326,
+// ESC B 1 2 gave a single beep of about 0.3 s.
 func (b *Builder) Beep(n, t uint8) error {
 	if n < 1 || n > 9 || t < 1 || t > 9 {
 		return invalid("ESC B", "n=%d t=%d out of range 1–9", n, t)
 	}
 	b.cmd(ESC, 'B', n, t)
 	return nil
-}
-
-// Buzz sounds the buzzer for duration×100 ms (ESC ( A 4 0 48 0 1 t). This
-// command is not in the RP32x reference; it is carried over from the
-// connordoman/pos project, where it worked on an RP326.
-func (b *Builder) Buzz(duration uint8) {
-	b.cmd(ESC, '(', 'A', 4, 0, 0x30, 0, 1, duration)
 }

@@ -119,7 +119,7 @@ func TestCommandBytes(t *testing.T) {
 		// Two-dimensional bar codes.
 		{"GS Z", func(b *Builder) { must(b.Select2DBarcodeType(Barcode2DQRCode)) }, []byte{0x1D, 0x5A, 1}},
 		{"ESC Z", func(b *Builder) { must(b.Print2DBarcode(0, 'M', 4, "hi")) }, []byte{0x1B, 0x5A, 0, 'M', 4, 2, 0, 'h', 'i'}},
-		{"QR", func(b *Builder) { must(b.PrintQRCode("hi", 0, QRErrorM, 6)) }, []byte{0x1D, 0x5A, 1, 0x1B, 0x5A, 0, 'M', 6, 2, 0, 'h', 'i'}},
+		{"QR ESC Z", func(b *Builder) { must(b.PrintQRCodeESCZ("hi", 0, QRErrorM, 6)) }, []byte{0x1D, 0x5A, 1, 0x1B, 0x5A, 0, 'M', 6, 2, 0, 'h', 'i'}},
 		{"PDF417", func(b *Builder) { must(b.PrintPDF417("hi", 4, 2, 3)) }, []byte{0x1D, 0x5A, 0, 0x1B, 0x5A, 4, 2, 3, 2, 0, 'h', 'i'}},
 
 		// Cutting, buzzer, macros.
@@ -130,7 +130,6 @@ func TestCommandBytes(t *testing.T) {
 		{"ESC i", func(b *Builder) { b.CutImmediate() }, []byte{0x1B, 0x69}},
 		{"ESC m", func(b *Builder) { b.PartialCutImmediate() }, []byte{0x1B, 0x6D}},
 		{"ESC B", func(b *Builder) { must(b.Beep(2, 3)) }, []byte{0x1B, 0x42, 2, 3}},
-		{"ESC ( A buzz", func(b *Builder) { b.Buzz(10) }, []byte{0x1B, 0x28, 0x41, 4, 0, 0x30, 0, 1, 10}},
 		{"GS :", func(b *Builder) { b.ToggleMacroDefinition() }, []byte{0x1D, 0x3A}},
 		{"GS : macro", func(b *Builder) {
 			must(b.DefineMacro(func(m *Builder) error { m.Text("hi"); return nil }))
@@ -229,8 +228,8 @@ func TestValidation(t *testing.T) {
 		{"barcode too long", func(b *Builder) error { return b.PrintBarcode(BarcodeCode39, strings.Repeat("A", 256)) }},
 		{"2d type", func(b *Builder) error { return b.Select2DBarcodeType(2) }},
 		{"2d empty", func(b *Builder) error { return b.Print2DBarcode(0, 0, 0, "") }},
-		{"qr version", func(b *Builder) error { return b.PrintQRCode("x", 41, QRErrorL, 4) }},
-		{"qr module", func(b *Builder) error { return b.PrintQRCode("x", 0, QRErrorL, 9) }},
+		{"qr version", func(b *Builder) error { return b.PrintQRCodeESCZ("x", 41, QRErrorL, 4) }},
+		{"qr module", func(b *Builder) error { return b.PrintQRCodeESCZ("x", 0, QRErrorL, 9) }},
 		{"pdf417 columns", func(b *Builder) error { return b.PrintPDF417("x", 31, 0, 2) }},
 		{"pdf417 security", func(b *Builder) error { return b.PrintPDF417("x", 1, 9, 2) }},
 		{"pdf417 ratio", func(b *Builder) error { return b.PrintPDF417("x", 1, 0, 6) }},
