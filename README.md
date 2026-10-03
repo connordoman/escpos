@@ -38,13 +38,40 @@ _, err := p.Flush(ctx)
 
 ## Connections
 
-| Interface | How | Notes |
-|---|---|---|
-| USB (libusb) | `usb.Open(usb.Options{})` | Needs cgo and libusb (`apt install libusb-1.0-0-dev`). Detaches the kernel driver automatically. Finds the bulk endpoints on its own. |
-| USB (Linux usblp) | `escpos.OpenFile("/dev/usb/lp0")` | No cgo, so it cross-compiles with `GOOS=linux GOARCH=arm64`. Probably the simplest choice on a Raspberry Pi. |
-| Ethernet | `escpos.DialTCP(ctx, "192.168.1.87")` | Raw TCP on port 9100. |
-| Serial (RS-232) | `serial.Open("/dev/ttyUSB0", serial.Options{BaudRate: 115200})` | Pure Go. Defaults to 9600 8N1. |
-| RJ11 | not a host interface | This is the cash drawer kick-out port. Drive it with `OpenCashDrawer`, `GeneratePulse` (ESC p) or `RealTimePulse` (DLE DC4) over any connection above. |
+Every way of connecting is always available. Auto-detection is an optional
+extra on top of explicit paths and IDs.
+
+| Interface | Explicit | Auto-detected | cgo? | Platforms |
+|---|---|---|---|---|
+| USB (OS driver) | `escpos.OpenFile("/dev/usb/lp0")` | `escpos.OpenUSB(nil)` | no | Linux (usblp), Windows (usbprint) |
+| USB (libusb) | `usb.Open(usb.Options{VendorID: …, ProductID: …})` | `usb.Open(usb.Options{})` | yes | Linux, macOS, Windows* |
+| Ethernet | `escpos.DialTCP(ctx, "192.168.1.87")` | n/a | no | all |
+| Serial (RS-232) | `serial.Open("/dev/ttyUSB0" or "COM3", serial.Options{…})` | n/a | no | all |
+| RJ11 | not a host interface | | | |
+
+The RJ11 socket is the cash drawer kick-out port. Drive it with
+`OpenCashDrawer`, `GeneratePulse` (ESC p) or `RealTimePulse` (DLE DC4) over
+any connection above.
+
+Which USB option to use on each platform:
+
+- **Linux / Raspberry Pi:** `escpos.OpenUSB` reads sysfs and opens the usblp
+  node. It needs no cgo, so it cross-compiles with `GOOS=linux GOARCH=arm64`.
+- **Windows:** `escpos.OpenUSB` lists the built-in usbprint driver's device
+  interfaces and opens one directly. It bypasses the print spooler, so no
+  printer queue or vendor driver is needed. Manufacturer and product names
+  are not filled in on Windows.
+- **macOS:** there is no cgo-free route. Use `usb.Open(usb.Options{})`
+  (`brew install libusb`); `escpos.OpenUSB` returns `ErrUSBDetectUnsupported`.
+
+\*libusb on Windows only works after replacing the printer's driver with
+WinUSB (for example using Zadig). That stops Windows printing to it, which is
+why `escpos.OpenUSB` is the better choice there.
+
+Both detection routes choose a printer with `escpos.SelectUSBPrinter`: a
+Rongta RP326 if one is connected, otherwise the only printer present. If
+several printers are connected, pass a match function (for example by
+`Serial`). `escpos.FindUSBPrinters()` and `usb.Find()` list the candidates.
 
 On Linux, using the USB device as a non-root user needs a udev rule, for
 example `/etc/udev/rules.d/99-escpos.rules`:

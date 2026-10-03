@@ -1,9 +1,18 @@
-// Package usb connects to ESC/POS printers over USB using libusb.
+// Package usb connects to ESC/POS printers over USB using libusb. It works
+// on Linux, macOS and Windows, and can detect the printer automatically.
 //
-// It requires cgo and libusb-1.0 (on Raspberry Pi OS: apt install
-// libusb-1.0-0-dev). On Linux the kernel's usblp driver is detached
-// automatically while the connection is open. To avoid cgo entirely on
-// Linux, use escpos.OpenFile("/dev/usb/lp0") instead.
+// It requires cgo and libusb-1.0:
+//
+//   - Raspberry Pi OS / Debian: apt install libusb-1.0-0-dev
+//   - macOS: brew install libusb
+//   - Windows: libusb from MSYS2 (pacman -S mingw-w64-x86_64-libusb), and the
+//     printer must use the WinUSB driver (installed with Zadig) instead of
+//     the built-in usbprint driver.
+//
+// On Linux the kernel's usblp driver is detached automatically while the
+// connection is open. On Linux and Windows, escpos.OpenUSB detects and opens
+// the printer through the operating system's own driver without cgo, and is
+// usually the simpler choice there; this package is the way to go on macOS.
 //
 // Accessing the device without root on Linux needs a udev rule such as:
 //
@@ -16,33 +25,44 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/connordoman/escpos"
 	"github.com/google/gousb"
 )
 
 // IDs of the Rongta RP326 this package was developed against.
 const (
-	DefaultVendorID  = 0x0fe6
-	DefaultProductID = 0x811e
+	DefaultVendorID  = escpos.RongtaVendorID
+	DefaultProductID = escpos.RongtaProductID
 )
 
-// ErrNotFound is returned when no matching device is connected.
-var ErrNotFound = errors.New("usb: printer not found")
+// ErrNotFound is returned when no matching device is connected. It is the
+// same error as escpos.ErrNoUSBPrinter.
+var ErrNotFound = escpos.ErrNoUSBPrinter
 
-// Options selects which device and interface to use. The zero value selects
-// the Rongta RP326 IDs and discovers everything else.
+// Options selects which device and interface to use. The zero value detects
+// the printer and discovers everything else.
 type Options struct {
-	VendorID  uint16 // default DefaultVendorID
-	ProductID uint16 // default DefaultProductID
+	// VendorID and ProductID select devices by ID. If both are zero, the
+	// printer is detected instead: every device with a USB printer-class
+	// interface, or with the Rongta RP326 IDs, is a candidate, and one is
+	// chosen by escpos.SelectUSBPrinter using Match.
+	VendorID  uint16
+	ProductID uint16
 
-	// Serial selects a device by serial number when several with the same
-	// IDs are connected. Empty means the first one found.
+	// Match chooses among detected printers when VendorID and ProductID are
+	// zero. Nil prefers a Rongta RP326, or else the only printer connected.
+	Match func(escpos.USBPrinter) bool
+
+	// Serial selects a device by serial number when several match. Empty
+	// means the first one found.
 	Serial string
 
 	// Config is the configuration number; 0 means the active one.
 	Config int
 
 	// Interface and Alternate select the interface; by default the first
-	// interface with a bulk OUT endpoint is used.
+	// interface with a bulk OUT endpoint is used, preferring the printer
+	// class.
 	Interface int
 	Alternate int
 }
@@ -58,37 +78,35 @@ type Conn struct {
 	out  *gousb.OutEndpoint
 	in   *gousb.InEndpoint // nil if the interface has no bulk IN endpoint
 
+	info escpos.USBPrinter
+
 	mu      sync.Mutex
 	pending []byte // bytes from the last IN packet not yet returned
 	packet  []byte
 }
 
-// Open opens the first matching printer.
-func Open(opts Options) (*Conn, error) {
-	if opts.VendorID == 0 {
-		opts.VendorID = DefaultVendorID
-	}
-	if opts.ProductID == 0 {
-		opts.ProductID = DefaultProductID
-	}
-
-	c := &Conn{ctx: gousb.NewContext()}
-	devs, err := c.ctx.OpenDevices(func(d *gousb.DeviceDesc) bool {
-		return uint16(d.Vendor) == opts.VendorID && uint16(d.Product) == opts.ProductID
-	})
+// Find lists connected USB printers: devices with a printer-class interface
+// or the Rongta RP326 IDs. Devices libusb cannot open (for example ones
+// using Windows' usbprint driver) are skipped.
+func Find() ([]escpos.USBPrinter, error) {
+	ctx := gousb.NewContext()
+	defer ctx.Close()
+	devs, infos, err := openCandidates(ctx, isPrinter)
 	for _, d := range devs {
-		if c.dev == nil && (opts.Serial == "" || serialMatches(d, opts.Serial)) {
-			c.dev = d
-		} else {
-			d.Close()
-		}
+		d.Close()
 	}
-	if c.dev == nil {
-		c.ctx.Close()
-		if err != nil {
-			return nil, fmt.Errorf("usb: opening %04x:%04x: %w", opts.VendorID, opts.ProductID, err)
-		}
-		return nil, fmt.Errorf("%w (%04x:%04x)", ErrNotFound, opts.VendorID, opts.ProductID)
+	if len(infos) == 0 && err != nil {
+		return nil, fmt.Errorf("usb: listing devices: %w", err)
+	}
+	return infos, nil
+}
+
+// Open opens a printer selected by opts.
+func Open(opts Options) (*Conn, error) {
+	c := &Conn{ctx: gousb.NewContext()}
+	if err := c.open(opts); err != nil {
+		c.Close()
+		return nil, err
 	}
 	if err := c.setup(opts); err != nil {
 		c.Close()
@@ -97,10 +115,98 @@ func Open(opts Options) (*Conn, error) {
 	return c, nil
 }
 
-func serialMatches(d *gousb.Device, serial string) bool {
-	s, err := d.SerialNumber()
-	return err == nil && s == serial
+func (c *Conn) open(opts Options) error {
+	detect := opts.VendorID == 0 && opts.ProductID == 0
+	filter := isPrinter
+	if !detect {
+		filter = func(d *gousb.DeviceDesc) bool {
+			return (opts.VendorID == 0 || uint16(d.Vendor) == opts.VendorID) &&
+				(opts.ProductID == 0 || uint16(d.Product) == opts.ProductID)
+		}
+	}
+	devs, infos, err := openCandidates(c.ctx, filter)
+	defer func() {
+		for _, d := range devs {
+			if d != c.dev {
+				d.Close()
+			}
+		}
+	}()
+
+	var candidates []escpos.USBPrinter
+	for _, info := range infos {
+		if opts.Serial == "" || info.Serial == opts.Serial {
+			candidates = append(candidates, info)
+		}
+	}
+	var chosen escpos.USBPrinter
+	var selErr error
+	if detect {
+		chosen, selErr = escpos.SelectUSBPrinter(candidates, opts.Match)
+	} else if len(candidates) > 0 {
+		chosen = candidates[0]
+	} else {
+		selErr = fmt.Errorf("%w (%04x:%04x)", ErrNotFound, opts.VendorID, opts.ProductID)
+	}
+	if selErr != nil {
+		if len(infos) == 0 && err != nil {
+			return fmt.Errorf("usb: opening devices: %w", err)
+		}
+		return selErr
+	}
+	for i, info := range infos {
+		if info.Path == chosen.Path {
+			c.dev, c.info = devs[i], info
+		}
+	}
+	return nil
 }
+
+// isPrinter reports whether a device looks like a printer.
+func isPrinter(d *gousb.DeviceDesc) bool {
+	if uint16(d.Vendor) == DefaultVendorID && uint16(d.Product) == DefaultProductID {
+		return true
+	}
+	if d.Class == gousb.ClassPrinter {
+		return true
+	}
+	for _, cfg := range d.Configs {
+		for _, intf := range cfg.Interfaces {
+			for _, alt := range intf.AltSettings {
+				if alt.Class == gousb.ClassPrinter {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// openCandidates opens every device accepted by filter and describes each.
+// devs and infos are parallel. err reports devices that could not be opened.
+func openCandidates(ctx *gousb.Context, filter func(*gousb.DeviceDesc) bool) ([]*gousb.Device, []escpos.USBPrinter, error) {
+	devs, err := ctx.OpenDevices(filter)
+	infos := make([]escpos.USBPrinter, len(devs))
+	for i, d := range devs {
+		infos[i] = describe(d)
+	}
+	return devs, infos, err
+}
+
+func describe(d *gousb.Device) escpos.USBPrinter {
+	info := escpos.USBPrinter{
+		Path:      fmt.Sprintf("%d:%d", d.Desc.Bus, d.Desc.Address),
+		VendorID:  uint16(d.Desc.Vendor),
+		ProductID: uint16(d.Desc.Product),
+	}
+	info.Manufacturer, _ = d.Manufacturer()
+	info.Product, _ = d.Product()
+	info.Serial, _ = d.SerialNumber()
+	return info
+}
+
+// Info describes the connected printer. Its Path is "bus:address".
+func (c *Conn) Info() escpos.USBPrinter { return c.info }
 
 func (c *Conn) setup(opts Options) error {
 	if err := c.dev.SetAutoDetach(true); err != nil {

@@ -26,7 +26,7 @@ func DialTCP(ctx context.Context, addr string) (net.Conn, error) {
 // OpenFile opens a printer device node for reading and writing, such as
 // /dev/usb/lp0 created by the Linux usblp driver for a USB printer. This
 // needs no cgo or libusb, making it the simplest way to reach a USB printer
-// from a Raspberry Pi. Whether status queries work depends on the driver;
+// from a Raspberry Pi; [OpenUSB] finds the path for you. Whether status queries work depends on the driver;
 // usblp supports reading.
 //
 // A serial port can also be opened this way if it has already been
