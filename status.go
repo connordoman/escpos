@@ -380,3 +380,44 @@ func (p *Printer) WaitProcessID(ctx context.Context, id [4]byte) error {
 		}
 	}
 }
+
+// Identity is what a printer reports about itself (GS I).
+type Identity struct {
+	ModelID      byte
+	TypeID       TypeID
+	Firmware     string
+	Manufacturer string
+	Name         string
+	Serial       string
+	Fonts        string // type of mounted additional fonts
+}
+
+// Identify asks the printer for its model and type IDs and its information
+// strings. It fails only if the printer does not answer the model query;
+// the other fields are filled in where the printer answers.
+func (p *Printer) Identify(ctx context.Context) (Identity, error) {
+	var id Identity
+	model, err := p.PrinterID(ctx, PrinterIDModel)
+	if err != nil {
+		return id, err
+	}
+	id.ModelID = model
+	if t, err := p.PrinterID(ctx, PrinterIDTypeID); err == nil {
+		id.TypeID = TypeID(t)
+	}
+	for _, f := range []struct {
+		t   PrinterIDType
+		dst *string
+	}{
+		{PrinterInfoFirmware, &id.Firmware},
+		{PrinterInfoManufacturer, &id.Manufacturer},
+		{PrinterInfoName, &id.Name},
+		{PrinterInfoSerial, &id.Serial},
+		{PrinterInfoFonts, &id.Fonts},
+	} {
+		if s, err := p.PrinterInfo(ctx, f.t); err == nil {
+			*f.dst = s
+		}
+	}
+	return id, nil
+}

@@ -3,18 +3,8 @@
 package main
 
 import (
-	"io"
-
 	"github.com/connordoman/escpos"
-	"github.com/connordoman/escpos/usb"
+	"github.com/connordoman/escpos/usb" // also registers libusb: connections
 )
-
-func openLibusb(match func(escpos.USBPrinter) bool) (io.ReadWriteCloser, escpos.USBPrinter, error) {
-	conn, err := usb.Open(usb.Options{Match: match})
-	if err != nil {
-		return nil, escpos.USBPrinter{}, err
-	}
-	return conn, conn.Info(), nil
-}
 
 func findLibusb() ([]escpos.USBPrinter, error) { return usb.Find() }

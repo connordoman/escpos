@@ -79,8 +79,8 @@ the ones it imports.
 | Package | |
 |---|---|
 | [`layout`](layout) | Styled, word-wrapped text measured in dots: paragraphs with hanging indents, receipt lines with dot leaders, tables, columns, boxes and rules |
-| [`usb`](usb) | USB through libusb (cgo) |
-| [`serial`](serial) | RS-232 |
+| [`usb`](usb) | USB through libusb (cgo); registers the `libusb` connection scheme |
+| [`serial`](serial) | RS-232; registers the `serial` connection scheme |
 
 ```go
 b := escpos.NewBuilder(escpos.PaperWidth80mm)
@@ -103,6 +103,43 @@ extra on top of explicit paths and IDs.
 | Ethernet | `escpos.DialTCP(ctx, "192.168.1.87")` | n/a | no | all |
 | Serial (RS-232) | `serial.Open("/dev/ttyUSB0" or "COM3", serial.Options{…})` | n/a | no | all |
 | RJ11 | not a host interface | | | |
+
+### Connection strings and reconnecting
+
+`escpos.Open` opens any of these from a string, which suits configuration
+files and environment variables:
+
+| String | |
+|---|---|
+| `usb` | Auto-detect: OS printer driver first, then libusb if `escpos/usb` is imported |
+| `usb?vid=0fe6&pid=811e` | ...narrowed by vendor and product ID |
+| `usb?serial=GD2076B8353DF1833` | ...or by USB serial number |
+| `libusb?vid=0fe6` | libusb only (`escpos/usb`, cgo) |
+| `file:/dev/usb/lp0` | A device node (or a `\\?\USB#...` path on Windows) |
+| `tcp://192.168.1.50` | Ethernet; port 9100 unless given |
+| `serial:/dev/ttyUSB0?baud=19200` | RS-232 (`escpos/serial`); also `databits`, `parity`, `stopbits` |
+| `discard` | Drops everything written, for testing |
+
+The root package handles `usb`, `file`, `tcp` and `discard`. The `serial` and
+`usb` packages register `serial` and `libusb` when imported, so cgo is only
+involved if you import `escpos/usb`:
+
+```go
+import _ "github.com/connordoman/escpos/serial"
+
+w, conn, err := escpos.Open(ctx, os.Getenv("PRINTER")) // conn.Kind, conn.Target, conn.USB, conn.Readable
+```
+
+For a long-running program, `escpos.Device` opens the connection on first use
+and reopens it after a failure. The printer can be switched off, unplugged or
+come back under a different device path while the program runs:
+
+```go
+dev := escpos.NewDevice("usb", escpos.WithPaperWidth(escpos.PaperWidth80mm))
+err := dev.Do(ctx, func(p *escpos.Printer) error {
+	return p.SendConfirmed(ctx, job.Bytes()) // or p.Status(ctx), p.Identify(ctx), ...
+})
+```
 
 The RJ11 socket is the cash drawer kick-out port. Drive it with
 `OpenCashDrawer`, `GeneratePulse` (ESC p) or `RealTimePulse` (DLE DC4) over

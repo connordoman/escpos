@@ -15,6 +15,7 @@
 //	escpos-demo status                  # query printer status
 //	escpos-demo list                    # list detected USB printers
 //	escpos-demo --tcp 192.168.1.87 demo # use the Ethernet interface
+//	escpos-demo -c serial:COM3 demo     # any escpos.Open connection string
 //	escpos-demo --dry-run demo          # hex dump instead of printing
 package main
 
@@ -28,10 +29,11 @@ import (
 
 // options holds the global flags.
 type options struct {
-	device    string
-	vid, pid  string
-	usbSerial string
-	libusb    bool
+	connection string
+	device     string
+	vid, pid   string
+	usbSerial  string
+	libusb     bool
 
 	serialPort string
 	baud       int
@@ -59,6 +61,8 @@ func newRootCommand() *cobra.Command {
 RP326) and prints samples of the package's features using placeholder data.
 
 Connection, in order of precedence:
+  --connection/-c STR an escpos.Open connection string, e.g. usb?vid=0fe6,
+                      tcp://192.168.1.50, serial:/dev/ttyUSB0?baud=19200
   --tcp ADDR          Ethernet (raw TCP, port 9100 by default)
   --serial PORT       RS-232 serial port, e.g. /dev/ttyUSB0 or COM3
   --device PATH       USB printer device path, e.g. /dev/usb/lp0 on Linux or a
@@ -70,6 +74,7 @@ Connection, in order of precedence:
 	}
 
 	f := root.PersistentFlags()
+	f.StringVarP(&opts.connection, "connection", "c", "", "connection string, e.g. tcp://192.168.1.50 or serial:COM3?baud=19200")
 	f.StringVarP(&opts.device, "device", "d", "", "USB printer device path (overrides detection)")
 	f.StringVar(&opts.vid, "vid", "", "USB vendor ID in hex, e.g. 0fe6")
 	f.StringVar(&opts.pid, "pid", "", "USB product ID in hex, e.g. 811e")
