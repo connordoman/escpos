@@ -17,7 +17,8 @@
 // fontWeight, textDecoration, textDecorationLine, textDecorationStyle,
 // textDecorationThickness, textAlign, color, backgroundColor (black on white
 // or inverted), lineHeight, letterSpacing, textTransform, whiteSpace,
-// transform (scale and right-angle rotation), marginLeft and width.
+// transform (scale and right-angle rotation), marginLeft, width and
+// borderStyle (for elements drawn with a box, solid or double lines).
 // Values a thermal printer cannot reproduce, such as italics or red text,
 // are errors from [Properties.Resolve].
 package css
@@ -79,6 +80,7 @@ type Properties struct {
 	Transform               Value `json:"transform,omitempty"`
 	MarginLeft              Value `json:"marginLeft,omitempty"`
 	Width                   Value `json:"width,omitempty"`
+	BorderStyle             Value `json:"borderStyle,omitempty"`
 }
 
 // field is a property's camelCase name and value.
@@ -106,6 +108,7 @@ func (p *Properties) fields() []field {
 		{"transform", &p.Transform},
 		{"marginLeft", &p.MarginLeft},
 		{"width", &p.Width},
+		{"borderStyle", &p.BorderStyle},
 	}
 }
 

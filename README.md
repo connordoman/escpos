@@ -260,7 +260,7 @@ only. `escpos.OpenUSB` (Linux usblp, Windows usbprint), `DialTCP` and
 
 - Text and layout: LF, CR, HT, ESC D, ESC !, ESC M (fonts A, B and C),
   ESC E, ESC G, ESC -, GS !, GS B, ESC V, ESC {, ESC SP, ESC 2, ESC 3,
-  ESC a, GS L, GS W, ESC $, ESC \, ESC J, ESC d, GS P, ESC t, ESC R, ESC =
+  ESC a, GS L, GS W, ESC \, ESC J, ESC d, GS P, ESC t, ESC R, ESC =
 - User-defined characters: ESC &, ESC %, ESC ?
 - Images: ESC *, GS *, GS /, GS v 0
 - Bar codes: GS k (both forms), GS H, GS f, GS h, GS w, GS x
@@ -281,6 +281,7 @@ only. `escpos.OpenUSB` (Linux usblp, Windows usbprint), `DialTCP` and
 | GS V 0, GS V 65 n, ESC i, ESC m | No full cutter: all make a partial cut. GS V 65 n behaves like GS V 66 n. |
 | GS C ; | The first GS c afterwards prints the value plus one step (value 50, step 10 prints 60, 70). |
 | GS I 69 | Reports "CHINA GB18030", but the printer has no Kanji support (type ID multi-byte bit is 0). |
+| ESC $ | Small positions work (`verify`), but `ESC $ 552` after text on a 576-dot line was ignored: the next text printed where the line left off. Its unit may be larger than one dot (the TM-T88III it emulates uses 1/180 inch). `layout.ParagraphFramed` pads with spaces and ESC SP instead. |
 
 **Not supported:**
 

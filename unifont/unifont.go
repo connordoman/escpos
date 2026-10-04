@@ -4,7 +4,7 @@
 // 16×16 glyphs. Its pixel lettering suits a thermal print head, and it
 // works on printers whose own fonts are limited to one code page.
 //
-//	err := unifont.Print(b, "Thank you! ありがとう 🙏", unifont.Options{Scale: 1.5})
+//	err := unifont.Print(b, "Thank you! ありがとう 🙏", unifont.Options{})
 //
 // Lines wrap at spaces, and between CJK characters following Japanese
 // line-breaking rules. Arabic and Hebrew are drawn left to right without
@@ -28,15 +28,25 @@ import (
 
 // Options controls how text is drawn.
 type Options struct {
-	// Scale is the number of dots per font pixel, from 1 to 8. Unifont is
-	// 16 pixels tall, so 1.5 matches a printer's 12×24 Font A and 2 (the
-	// default) is a little larger.
+	// Scale is the number of dots per font pixel, from 1 to 8. The
+	// default, 2, prints each pixel as an even 2×2 block and suits text
+	// mixed with the printer's Font A. Whole numbers print most evenly.
 	Scale float64
-	Bold  bool
+	// ScaleX and ScaleY, if set, override Scale for one direction. With
+	// ScaleX 1.5 a font cell is 12 dots wide, the width of a Font A
+	// character, which keeps columns aligned with printer text in tables.
+	ScaleX, ScaleY float64
+	// EdgeScaleX, if set, is the horizontal scale of FirstPrefix,
+	// RestPrefix and Suffix. Setting it to 1.5 keeps bullets, quote bars
+	// and box sides on Font A's 12-dot grid, lined up with the printer
+	// text above and below, while the text itself uses ScaleX.
+	EdgeScaleX float64
+	Bold       bool
 	// Weight is the number of extra dots added to the right of every
 	// pixel of ordinary (non-emoji) glyphs, thickening their strokes. nil
-	// means automatic: 1 below scale 3, where Unifont's 1-pixel strokes
-	// would otherwise print fainter than the printer's own fonts.
+	// means automatic: 1 below a horizontal scale of 2, where some of
+	// Unifont's 1-pixel strokes would print a single dot wide, fainter than
+	// the printer's own fonts.
 	Weight *int
 	// SolidEmoji draws emoji solid black. By default their solid areas are
 	// shaded with a 50% checkerboard, keeping outlines intact, since
@@ -54,13 +64,26 @@ type Options struct {
 	// lines of each paragraph, for bullets and quote bars, like
 	// layout.Writer.Paragraph.
 	FirstPrefix, RestPrefix string
+	// Suffix is drawn flush against the right edge of every line, such as
+	// the right side of a box, like layout.Writer.ParagraphFramed. With
+	// Scale 1.5 it lines up with printer text in Font A.
+	Suffix string
 }
 
-func (o Options) scale() float64 {
-	if o.Scale <= 0 {
-		return 2
+func (o Options) scale() (x, y float64) {
+	clamp := func(v float64) float64 { return min(max(v, 1), 8) }
+	s := 2.0
+	if o.Scale > 0 {
+		s = clamp(o.Scale)
 	}
-	return min(max(o.Scale, 1), 8)
+	x, y = s, s
+	if o.ScaleX > 0 {
+		x = clamp(o.ScaleX)
+	}
+	if o.ScaleY > 0 {
+		y = clamp(o.ScaleY)
+	}
+	return x, y
 }
 
 // glyphCell is one base character and the combining marks drawn over it.
@@ -186,27 +209,37 @@ func Render(text string, width int, o Options) (*image.Gray, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := o.scale()
-	avail := int(float64(width) / s) // in font pixels
-	first, rest := cellsOf(f, o.FirstPrefix), cellsOf(f, o.RestPrefix)
+	s, sy := o.scale() // s is the horizontal scale of the text
+	es := s            // and of the prefixes and suffix
+	if o.EdgeScaleX > 0 {
+		es = min(max(o.EdgeScaleX, 1), 8)
+	}
+	dots := func(cells []glyphCell, scale float64) int {
+		return int(math.Round(float64(cellsWidth(cells)) * scale))
+	}
+	first, rest, suffix := cellsOf(f, o.FirstPrefix), cellsOf(f, o.RestPrefix), cellsOf(f, o.Suffix)
+	suffixDots := dots(suffix, es)
+	textArea := func(prefix []glyphCell) int { return width - dots(prefix, es) - suffixDots }
 
-	var lines [][]glyphCell
+	type line struct{ prefix, text []glyphCell }
+	var lines []line
 	for para := range strings.SplitSeq(normalize(text), "\n") {
-		wrapped := wrapGlyphs(cellsOf(f, para), avail-cellsWidth(first), avail-cellsWidth(rest), !o.NoWrap)
+		wrapped := wrapGlyphs(cellsOf(f, para),
+			int(float64(textArea(first))/s), int(float64(textArea(rest))/s), !o.NoWrap)
 		for i, l := range wrapped {
 			prefix := rest
 			if i == 0 {
 				prefix = first
 			}
-			lines = append(lines, append(append([]glyphCell{}, prefix...), trimTrailingSpace(l)...))
+			lines = append(lines, line{prefix, trimTrailingSpace(l)})
 		}
 	}
 
-	gap := int(math.Round(s))
+	gap := int(math.Round(sy))
 	if o.LineGap != nil {
 		gap = max(*o.LineGap, 0)
 	}
-	lineH := int(math.Round(Height*s)) + gap
+	lineH := int(math.Round(Height*sy)) + gap
 	img := image.NewGray(image.Rect(0, 0, width, max(lineH*len(lines), 1)))
 	bg, fg := color.Gray{Y: 255}, color.Gray{Y: 0}
 	if o.Invert {
@@ -215,46 +248,59 @@ func Render(text string, width int, o Options) (*image.Gray, error) {
 	for i := range img.Pix {
 		img.Pix[i] = bg.Y
 	}
-	extra := 0
-	if s < 3 {
-		extra = 1
-	}
-	if o.Weight != nil {
-		extra = max(*o.Weight, 0)
-	}
-	if o.Bold {
-		extra += max(1, int(s/2))
-	}
-	for li, line := range lines {
-		lw := int(math.Round(float64(cellsWidth(line)) * s))
-		x0 := 0
-		switch o.Align {
-		case escpos.AlignCenter:
-			x0 = (width - lw) / 2
-		case escpos.AlignRight:
-			x0 = width - lw
+	weight := func(scale float64) int {
+		extra := 0
+		if scale < 2 {
+			extra = 1
 		}
-		y0 := li*lineH + gap/2
+		if o.Weight != nil {
+			extra = max(*o.Weight, 0)
+		}
+		if o.Bold {
+			extra += max(1, int(scale/2))
+		}
+		return extra
+	}
+	drawCells := func(cells []glyphCell, x0, y0 int, scale float64) {
+		extra := weight(scale)
 		pen := 0
-		for _, c := range line {
+		for _, c := range cells {
 			g, _ := f.Glyph(c.r)
 			ex, thin := extra, false
 			if isEmoji(c.r) {
 				ex, thin = 0, !o.SolidEmoji
 				if o.Bold {
-					ex = max(1, int(s/2))
+					ex = max(1, int(scale/2))
 				}
 			}
-			drawGlyph(img, g, x0, y0, pen, s, ex, thin, fg)
+			drawGlyph(img, g, x0, y0, pen, scale, sy, ex, thin, fg)
 			for _, m := range c.marks {
 				mg, ok := f.Glyph(m)
 				if !ok {
 					continue
 				}
 				off, _ := f.Combining(m)
-				drawGlyph(img, mg, x0, y0, pen+c.adv+off, s, extra, false, fg)
+				drawGlyph(img, mg, x0, y0, pen+c.adv+off, scale, sy, extra, false, fg)
 			}
 			pen += c.adv
+		}
+	}
+	for li, l := range lines {
+		y0 := li*lineH + gap/2
+		left := dots(l.prefix, es)
+		area := width - left - suffixDots
+		lw := dots(l.text, s)
+		x0 := left
+		switch o.Align {
+		case escpos.AlignCenter:
+			x0 += (area - lw) / 2
+		case escpos.AlignRight:
+			x0 += area - lw
+		}
+		drawCells(l.prefix, 0, y0, es)
+		drawCells(l.text, x0, y0, s)
+		if len(suffix) > 0 {
+			drawCells(suffix, width-suffixDots, y0, es)
 		}
 	}
 	return img, nil
@@ -269,10 +315,10 @@ func isEmoji(r rune) bool {
 // scaling each font pixel to a block of dots. extra widens each block to
 // the right. thin shades solid interiors with a 50% checkerboard, keeping
 // outlines intact, so dense glyphs print grey instead of black.
-func drawGlyph(img *image.Gray, g Glyph, x0, y0, pen int, s float64, extra int, thin bool, fg color.Gray) {
+func drawGlyph(img *image.Gray, g Glyph, x0, y0, pen int, s, sy float64, extra int, thin bool, fg color.Gray) {
 	b := img.Bounds()
 	for gy := range Height {
-		ya, yb := y0+int(float64(gy)*s), y0+int(float64(gy+1)*s)
+		ya, yb := y0+int(float64(gy)*sy), y0+int(float64(gy+1)*sy)
 		for gx := range g.Width {
 			if !g.Set(gx, gy) {
 				continue
@@ -293,7 +339,7 @@ func drawGlyph(img *image.Gray, g Glyph, x0, y0, pen int, s float64, extra int, 
 }
 
 // Cells returns how many 8-pixel font cells s occupies: 1 for most
-// characters and 2 for wide ones such as CJK and emoji. At scale 1.5 a
+// characters and 2 for wide ones such as CJK and emoji. At ScaleX 1.5 a
 // cell is 12 dots, the width of a Font A character, which makes Cells a
 // suitable measure for layout.Table.Layout.
 func Cells(s string) int {

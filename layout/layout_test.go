@@ -136,3 +136,66 @@ func TestSpacingWidensCharacters(t *testing.T) {
 		t.Error("no ESC SP 4")
 	}
 }
+
+func TestParagraphFramed(t *testing.T) {
+	w := newWriter()
+	w.ParagraphFramed([]Span{{Text: strings.Repeat("word ", 20)}}, []Span{{Text: "│ "}}, []Span{{Text: "│ "}}, []Span{{Text: " │"}})
+	w.LineFramed([]Span{{Text: "│ "}, {Text: "small", Style: Style{FontB: true}}}, []Span{{Text: " │"}})
+	got := lines(w.B.Bytes())
+	for _, l := range got[:len(got)-1] {
+		// Font A lines are padded with whole spaces to exactly 48 columns.
+		if !strings.HasPrefix(l, "│ ") || !strings.HasSuffix(l, " │") || len([]rune(l)) != 48 {
+			t.Errorf("framed line %q (%d columns)", l, len([]rune(l)))
+		}
+	}
+	if bytes.Contains(w.B.Bytes(), []byte{escpos.ESC, '$'}) {
+		t.Error("uses ESC $, which the RP326 ignores")
+	}
+}
+
+func TestPaddingIsExact(t *testing.T) {
+	for gap := 0; gap <= 600; gap++ {
+		got := atomsWidth(padding(gap))
+		if got != gap && !(gap < 9) {
+			t.Fatalf("padding(%d) is %d dots", gap, got)
+		}
+	}
+	// "│ " + 5 Font B characters + padding + " │" must total 576 dots.
+	w := newWriter()
+	w.LineFramed([]Span{{Text: "│ "}, {Text: "small", Style: Style{FontB: true}}}, []Span{{Text: " │"}})
+	// 576 - 24 - 45 - 24 = 483 = 39 spaces of 12 + one of 12+3.
+	if !bytes.Contains(w.B.Bytes(), []byte{escpos.ESC, ' ', 3, ' ', escpos.ESC, ' ', 0}) {
+		t.Errorf("no exact padding in % X", w.B.Bytes())
+	}
+}
+
+func TestTableFillsLine(t *testing.T) {
+	w := newWriter()
+	w.Table(Table{
+		Headers: []string{"Item", "Qty", "Price"},
+		Aligns:  []escpos.Align{escpos.AlignLeft, escpos.AlignCenter, escpos.AlignRight},
+		Rows:    [][]string{{"Coffee", "2", "$7.00"}, {"Bagel", "1", "$3.50"}},
+	})
+	got := lines(w.B.Bytes())
+	// Natural widths 6, 3, 5 (+2 gaps = 16) grow in proportion to 48.
+	if got[0] != "Item                    Qty              Price" && len([]rune(got[0])) != 48 {
+		t.Errorf("header %q", got[0])
+	}
+	for _, l := range got {
+		if len([]rune(l)) != 48 && !strings.HasSuffix(l, "$7.00") {
+			t.Errorf("line not full width: %q (%d)", l, len([]rune(l)))
+		}
+	}
+	if !strings.HasSuffix(got[2], "$7.00") || !strings.HasPrefix(got[2], "Coffee") {
+		t.Errorf("row %q", got[2])
+	}
+	if want := fitColumns([]int{6, 3, 5}, 46, true); want[0]+want[1]+want[2] != 46 || want[0] <= want[2] || want[2] <= want[1] {
+		t.Errorf("proportional widths %v", want)
+	}
+
+	c := newWriter()
+	c.Table(Table{Rows: [][]string{{"a", "b"}}, Compact: true})
+	if l := lines(c.B.Bytes())[0]; l != "a b" {
+		t.Errorf("compact table %q", l)
+	}
+}

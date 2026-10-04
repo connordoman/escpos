@@ -45,6 +45,10 @@ type Computed struct {
 	// for the block (GS L, GS W). They are not inherited; 0 Width means the
 	// rest of the paper.
 	MarginLeft, Width int
+
+	// Border is "solid" or "double" for elements drawn with a box; empty
+	// means unset. It is not inherited.
+	Border string
 }
 
 // Text applies the computed text-transform to s.
@@ -90,7 +94,7 @@ func (e *Error) Error() string {
 // still apply.
 func (p *Properties) Resolve(parent Computed) (Computed, error) {
 	c := parent
-	c.MarginLeft, c.Width = 0, 0
+	c.MarginLeft, c.Width, c.Border = 0, 0, ""
 	if c.Size == 0 {
 		c.Size = 1
 	}
@@ -275,6 +279,14 @@ func (p *Properties) Resolve(parent Computed) (Computed, error) {
 			fail("width", p.Width, "want a positive length in px, or auto")
 		} else {
 			c.Width = clamp(int(math.Round(px)), 1, 65535)
+		}
+	}
+	if v := norm(p.BorderStyle); v != "" {
+		switch v {
+		case "solid", "double":
+			c.Border = v
+		default:
+			fail("borderStyle", p.BorderStyle, "boxes are drawn with solid or double lines")
 		}
 	}
 	return c, errors.Join(errs...)

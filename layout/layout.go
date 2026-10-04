@@ -192,19 +192,78 @@ func atomsWidth(a []atom) int {
 // the text start new lines. first is printed before the first line and rest
 // before each following line, for bullets, numbering and quote bars.
 func (w *Writer) Paragraph(spans []Span, first, rest []Span) {
+	w.ParagraphFramed(spans, first, rest, nil)
+}
+
+// ParagraphFramed is [Writer.Paragraph] with right printed flush against
+// the right edge of every line, such as the right side of a box drawn
+// around the text. The text wraps short of it, and the gap is padded with
+// spaces, the last widened with character spacing (ESC SP) to the exact
+// dot, so right lines up whatever fonts and sizes the lines use. Use it
+// with left alignment.
+func (w *Writer) ParagraphFramed(spans []Span, first, rest, right []Span) {
 	all := w.atoms(spans)
-	pf, pr := w.atoms(first), w.atoms(rest)
+	pf, pr, rr := w.atoms(first), w.atoms(rest), w.atoms(right)
+	rw := atomsWidth(rr)
 	start := 0
 	for i := 0; i <= len(all); i++ {
 		if i < len(all) && all[i].r != '\n' {
 			continue
 		}
-		for _, line := range wrapAtoms(all[start:i], w.Width-atomsWidth(pf), w.Width-atomsWidth(pr)) {
-			w.printAtoms(append(append([]atom{}, pf...), line...), true)
+		for _, line := range wrapAtoms(all[start:i], w.Width-atomsWidth(pf)-rw, w.Width-atomsWidth(pr)-rw) {
+			w.printFramed(append(append([]atom{}, pf...), line...), rr)
 			pf = pr
 		}
 		start = i + 1
 	}
+}
+
+// LineFramed prints spans on one line, without wrapping, with right flush
+// against the right edge as in [Writer.ParagraphFramed].
+func (w *Writer) LineFramed(spans []Span, right []Span) {
+	w.printFramed(w.atoms(spans), w.atoms(right))
+}
+
+func (w *Writer) printFramed(line, right []atom) {
+	if len(right) == 0 {
+		w.printAtoms(line, true)
+		return
+	}
+	for len(line) > 0 && line[len(line)-1].r == ' ' {
+		line = line[:len(line)-1]
+	}
+	gap := w.Width - atomsWidth(line) - atomsWidth(right)
+	w.emit(append(append(line, padding(gap)...), right...))
+	w.B.LineFeed()
+}
+
+// padding returns spaces exactly gap dots wide where possible: Font A
+// spaces, the last one widened by character spacing for the remainder. Gaps
+// under 9 dots that are not 0 cannot be filled exactly and are left short.
+//
+// Absolute positioning (ESC $) would be simpler, but printers disagree on
+// its units; the RP326 ignores the values that work on other printers.
+func padding(gap int) []atom {
+	if gap <= 0 {
+		return nil
+	}
+	space := atom{' ', Style{}}
+	n, rem := gap/12, gap%12
+	var out []atom
+	switch {
+	case rem == 0:
+		for range n {
+			out = append(out, space)
+		}
+	case n > 0:
+		for range n - 1 {
+			out = append(out, space)
+		}
+		out = append(out, atom{' ', Style{Spacing: uint8(rem)}}) // 12 + rem dots
+	case gap >= 9:
+		out = append(out, atom{' ', Style{FontB: true, Spacing: uint8(gap - 9)}})
+	}
+	return out
 }
 
 // Text prints s in style st, word-wrapped.
@@ -224,6 +283,12 @@ func (w *Writer) printAtoms(line []atom, trim bool) {
 	for trim && len(line) > 0 && line[len(line)-1].r == ' ' {
 		line = line[:len(line)-1]
 	}
+	w.emit(line)
+	w.B.LineFeed()
+}
+
+// emit prints atoms, switching style between runs.
+func (w *Writer) emit(line []atom) {
 	var run strings.Builder
 	var st Style
 	flush := func() {
@@ -241,7 +306,6 @@ func (w *Writer) printAtoms(line []atom, trim bool) {
 		run.WriteRune(a.r)
 	}
 	flush()
-	w.B.LineFeed()
 }
 
 // wrapAtoms breaks a line into lines no wider than firstWidth dots for the

@@ -111,3 +111,59 @@ func TestControlCharactersRemoved(t *testing.T) {
 		t.Error("control characters were drawn")
 	}
 }
+
+func TestSuffix(t *testing.T) {
+	zero := 0
+	// 36 cells at scale 2 with a 2-cell suffix leaves 34 for text.
+	img := render(t, strings.Repeat("x", 35), Options{Scale: 2, LineGap: &zero, Suffix: " │"})
+	if h := img.Bounds().Dy(); h != 64 {
+		t.Errorf("text did not wrap short of the suffix: %d lines", h/32)
+	}
+	// The bar is in the last cell on every line: column 568–575.
+	for y := 0; y < 64; y++ {
+		inked := false
+		for x := 560; x < 576; x++ {
+			inked = inked || img.GrayAt(x, y).Y < 128
+		}
+		if y%32 > 2 && y%32 < 30 && !inked {
+			t.Fatalf("no bar at row %d", y)
+		}
+	}
+}
+
+func TestScaleXY(t *testing.T) {
+	zero := 0
+	img := render(t, strings.Repeat("x", 48), Options{ScaleX: 1.5, ScaleY: 2, LineGap: &zero})
+	if h := img.Bounds().Dy(); h != 32 {
+		t.Errorf("48 cells at ScaleX 1.5 should fit one 32-dot line, got %d dots", h)
+	}
+	img = render(t, strings.Repeat("x", 37), Options{Scale: 2, LineGap: &zero})
+	if h := img.Bounds().Dy(); h != 64 {
+		t.Errorf("37 cells at scale 2 should wrap, got %d dots", h)
+	}
+}
+
+func TestEdgeScale(t *testing.T) {
+	zero := 0
+	// A bar prefix at 1.5 occupies 24 dots ("│ "), then text at 2.
+	img := render(t, "x", Options{Scale: 2, EdgeScaleX: 1.5, FirstPrefix: "│ ", Suffix: " │", LineGap: &zero})
+	inked := func(x0, x1 int) bool {
+		for y := 4; y < 28; y++ {
+			for x := x0; x < x1; x++ {
+				if img.GrayAt(x, y).Y < 128 {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !inked(0, 12) || inked(12, 24) {
+		t.Error("prefix bar not in the first 12-dot cell")
+	}
+	if !inked(24, 40) {
+		t.Error("text does not start after the 24-dot prefix")
+	}
+	if !inked(564, 576) || inked(552, 564) {
+		t.Error("suffix bar not in the last 12-dot cell")
+	}
+}

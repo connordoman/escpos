@@ -139,7 +139,21 @@ func TestParseDeclarations(t *testing.T) {
 	if !strings.Contains(string(Stylesheet), `font-family: "Font B"`) {
 		t.Error("stylesheet not embedded")
 	}
-	if len(Names()) != 17 {
+	if len(Names()) != 18 {
 		t.Errorf("Names() = %v", Names())
+	}
+}
+
+func TestBorderStyle(t *testing.T) {
+	c := resolve(t, Properties{BorderStyle: "double"})
+	if c.Border != "double" {
+		t.Errorf("got %q", c.Border)
+	}
+	child, _ := (&Properties{}).Resolve(c)
+	if child.Border != "" {
+		t.Error("borderStyle is not inherited in CSS")
+	}
+	if _, err := (&Properties{BorderStyle: "dotted"}).Resolve(Computed{}); err == nil {
+		t.Error("dotted accepted")
 	}
 }

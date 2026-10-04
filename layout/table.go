@@ -1,13 +1,16 @@
 package layout
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/connordoman/escpos"
 )
 
-// Table is a grid of plain-text cells. Columns are sized to their content
-// and cells wrap when the table is wider than the line.
+// Table is a grid of plain-text cells. It fills the line, giving each
+// column a share in proportion to its widest content; when the content is
+// wider than the line, narrow columns keep their width and cells in the
+// wide ones wrap.
 type Table struct {
 	Headers []string       // optional
 	Aligns  []escpos.Align // per column, default left
@@ -16,6 +19,8 @@ type Table struct {
 	// Weights, if set, divides the width among columns in proportion
 	// instead of sizing columns to their content.
 	Weights []int
+	// Compact sizes columns to their content instead of filling the line.
+	Compact bool
 
 	HeaderStyle Style
 	Style       Style
@@ -54,7 +59,7 @@ func (t Table) Layout(width int, measure func(string) int) [][]Span {
 	for _, r := range t.Rows {
 		consider(r)
 	}
-	widths := fitColumns(natural, avail)
+	widths := fitColumns(natural, avail, !t.Compact)
 	if len(t.Weights) == n {
 		widths = weighColumns(t.Weights, avail)
 	}
@@ -111,9 +116,11 @@ func (t Table) Layout(width int, measure func(string) int) [][]Span {
 	return out
 }
 
-// fitColumns shrinks natural column widths to fit avail, giving narrow
-// columns what they need and sharing the rest among wide ones.
-func fitColumns(natural []int, avail int) []int {
+// fitColumns fits natural column widths to avail. Content that is too
+// wide shrinks: narrow columns keep what they need and wide ones share the
+// rest. Content that is narrower grows to fill avail when fill is set, each
+// column getting extra width in proportion to its natural width.
+func fitColumns(natural []int, avail int, fill bool) []int {
 	widths := make([]int, len(natural))
 	total := 0
 	for i, w := range natural {
@@ -121,6 +128,9 @@ func fitColumns(natural []int, avail int) []int {
 		total += widths[i]
 	}
 	if total <= avail {
+		if fill && total < avail {
+			grow(widths, total, avail-total)
+		}
 		return widths
 	}
 	fixed := make([]bool, len(natural))
@@ -150,6 +160,26 @@ func fitColumns(natural []int, avail int) []int {
 		}
 	}
 	return widths
+}
+
+// grow shares extra among widths in proportion to their size, giving any
+// remainder to the widest columns first.
+func grow(widths []int, total, extra int) {
+	given := 0
+	for i, w := range widths {
+		add := extra * w / total
+		widths[i] += add
+		given += add
+	}
+	order := make([]int, len(widths))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return widths[b] - widths[a] })
+	for k := 0; given < extra; k++ {
+		widths[order[k%len(order)]]++
+		given++
+	}
 }
 
 func weighColumns(weights []int, avail int) []int {
