@@ -123,3 +123,16 @@ func TestMeasureUsesActiveCodePage(t *testing.T) {
 		t.Errorf("control characters counted: %d", n)
 	}
 }
+
+func TestSpacingWidensCharacters(t *testing.T) {
+	w := newWriter()
+	w.Text(strings.Repeat("ab ", 20), Style{Spacing: 4}) // 16-dot cells: 36 per line
+	for _, l := range lines(w.B.Bytes()) {
+		if len(l) > 36 {
+			t.Errorf("line longer than 36 columns: %q", l)
+		}
+	}
+	if !bytes.Contains(w.B.Bytes(), []byte{escpos.ESC, ' ', 4}) {
+		t.Error("no ESC SP 4")
+	}
+}

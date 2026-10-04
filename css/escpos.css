@@ -1,0 +1,146 @@
+/*
+ * escpos.css: render HTML the way an ESC/POS receipt printer prints it in
+ * its default state (ESC @), at one CSS pixel per printer dot (203 dpi).
+ *
+ *   <div class="escpos">…</div>                  80 mm paper, 576 dots
+ *   <div class="escpos escpos-58mm">…</div>      58 mm paper, 432 dots
+ *
+ * Styles written with github.com/connordoman/escpos/css (React-style
+ * CSSProperties) keep their meaning here: fontSize 24px is the printer's
+ * normal size and 48px double, "Font A" and "Font B" are its two fonts, and
+ * backgroundColor black inverts text. Scale the whole receipt for screens
+ * with --escpos-zoom, e.g. style="--escpos-zoom: 0.5".
+ *
+ * The printer's fonts are bitmaps, so these faces borrow a local monospace
+ * font, sized so a character is about one printer cell wide, and letter
+ * spacing makes up the difference exactly: 12 dots for Font A and 9 for
+ * Font B at 24px. Glyph shapes and heights differ from the printer's; line
+ * breaks and alignment match. (Setting letterSpacing on an element replaces
+ * that correction, so its characters may drift by a fraction of a pixel.)
+ */
+
+@font-face {
+  font-family: "Font A";
+  src: local("SF Mono"), local("Menlo"), local("DejaVu Sans Mono"), local("Liberation Mono"),
+    local("Consolas"), local("Courier New");
+  /* Most monospace fonts advance 0.6em; 0.5em × 24px = 12 dots. */
+  size-adjust: 83.333%;
+}
+
+@font-face {
+  font-family: "Font A";
+  font-weight: bold;
+  src: local("SF Mono Bold"), local("Menlo Bold"), local("DejaVu Sans Mono Bold"),
+    local("Liberation Mono Bold"), local("Consolas Bold"), local("Courier New Bold");
+  size-adjust: 83.333%;
+}
+
+@font-face {
+  font-family: "Font B";
+  src: local("SF Mono"), local("Menlo"), local("DejaVu Sans Mono"), local("Liberation Mono"),
+    local("Consolas"), local("Courier New");
+  /* 0.375em × 24px = 9 dots. */
+  size-adjust: 62.5%;
+}
+
+@font-face {
+  font-family: "Font B";
+  font-weight: bold;
+  src: local("SF Mono Bold"), local("Menlo Bold"), local("DejaVu Sans Mono Bold"),
+    local("Liberation Mono Bold"), local("Consolas Bold"), local("Courier New Bold");
+  size-adjust: 62.5%;
+}
+
+.escpos {
+  --escpos-paper-width: 576px; /* printable width, 80 mm paper */
+  --escpos-zoom: 1;
+
+  box-sizing: content-box;
+  width: var(--escpos-paper-width);
+  margin: 0;
+  padding: 0;
+  zoom: var(--escpos-zoom);
+
+  /* The default state: Font A, normal size, 30-dot lines, left aligned. */
+  font-family: "Font A", monospace;
+  font-size: 24px;
+  font-weight: normal;
+  font-style: normal;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  line-height: 30px;
+  text-align: left;
+  text-decoration: none;
+  text-transform: none;
+
+  /* Printers keep spaces and break overlong words anywhere. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+
+  color: #000;
+  background: #fff;
+  /* Thermal paper has no grey: avoid smoothing that suggests one. */
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/*
+ * Make every character exactly one cell wide, whatever font was borrowed:
+ * a cell is 0.5em in Font A and 0.375em in Font B, and 1ch is the borrowed
+ * font's actual advance. Declared on every element because letter-spacing
+ * inherits as an absolute length.
+ */
+.escpos,
+.escpos * {
+  letter-spacing: calc(var(--escpos-cell, 0.5em) - 1ch);
+}
+
+.escpos [style*="Font A"] {
+  --escpos-cell: 0.5em;
+}
+
+.escpos [style*="Font B"] {
+  --escpos-cell: 0.375em;
+}
+
+.escpos-82mm {
+  --escpos-paper-width: 640px;
+}
+
+.escpos-60mm {
+  --escpos-paper-width: 448px;
+}
+
+.escpos-58mm {
+  --escpos-paper-width: 432px;
+}
+
+/* Block elements map to printed lines, with no extra spacing. */
+.escpos :where(p, div, h1, h2, h3, h4, h5, h6, ul, ol, li, pre, blockquote, table) {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+}
+
+/* Text that needs a transform (scaleX, rotate) must be an inline block. */
+.escpos [style*="transform"] {
+  display: inline-block;
+  transform-origin: left bottom;
+}
+
+/* Raster images print one pixel per dot, black and white. */
+.escpos :where(img, canvas, svg) {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+
+/* Inverted text (GS B 1) prints white on a black band. */
+.escpos [style*="background-color: black"],
+.escpos [style*="background-color: #000"] {
+  color: #fff;
+}

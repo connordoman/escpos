@@ -29,6 +29,8 @@ type Style struct {
 	Width        uint8 // multiplier 1–8; 0 means 1
 	Height       uint8 // multiplier 1–8; 0 means 1
 	UpsideDown   bool
+	Rotate90     bool  // characters turned 90° clockwise (ESC V)
+	Spacing      uint8 // extra dots to the right of each character (ESC SP)
 }
 
 func (s Style) width() uint8  { return min(max(s.Width, 1), 8) }
@@ -41,8 +43,9 @@ func (s Style) font() escpos.Font {
 	return escpos.FontA
 }
 
-// CharWidth is the width of one character in dots.
-func (s Style) CharWidth() int { return s.font().Width() * int(s.width()) }
+// CharWidth is the width of one character in dots, including character
+// spacing, which the printer scales with the width multiplier.
+func (s Style) CharWidth() int { return (s.font().Width() + int(s.Spacing)) * int(s.width()) }
 
 // CharHeight is the height of one character in dots.
 func (s Style) CharHeight() int {
@@ -125,6 +128,12 @@ func (w *Writer) Apply(s Style) {
 	}
 	if s.UpsideDown != c.UpsideDown {
 		b.SetUpsideDown(s.UpsideDown)
+	}
+	if s.Rotate90 != c.Rotate90 {
+		b.SetRotate90(s.Rotate90)
+	}
+	if s.Spacing != c.Spacing {
+		b.SetCharacterSpacing(s.Spacing)
 	}
 	w.cur = s
 }
