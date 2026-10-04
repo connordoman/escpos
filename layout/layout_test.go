@@ -6,29 +6,11 @@ import (
 	"testing"
 
 	"github.com/connordoman/escpos"
-	"golang.org/x/text/encoding/charmap"
+	"github.com/connordoman/escpos/escpostest"
 )
 
-// lines returns the printed lines with style commands removed, decoded as
-// CP437.
-func lines(b []byte) []string {
-	var out []string
-	var cur strings.Builder
-	for i := 0; i < len(b); i++ {
-		switch c := b[i]; {
-		case c == escpos.ESC && i+1 < len(b) && b[i+1] == '2':
-			i++
-		case c == escpos.ESC || c == escpos.GS:
-			i += 2
-		case c == '\n':
-			out = append(out, cur.String())
-			cur.Reset()
-		default:
-			cur.WriteRune(charmap.CodePage437.DecodeByte(c))
-		}
-	}
-	return out
-}
+// lines returns the printed lines without commands.
+func lines(b []byte) []string { return escpostest.Lines(b) }
 
 func newWriter() *Writer { return New(escpos.NewBuilder(escpos.PaperWidth80mm)) }
 

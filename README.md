@@ -79,6 +79,7 @@ the ones it imports.
 | Package | |
 |---|---|
 | [`layout`](layout) | Styled, word-wrapped text measured in dots: paragraphs with hanging indents, receipt lines with dot leaders, tables, columns, boxes and rules |
+| [`escpostest`](escpostest) | Decodes command streams into readable text (`<ESC E 1>TOTAL⏎`) for testing code that builds jobs |
 | [`usb`](usb) | USB through libusb (cgo); registers the `libusb` connection scheme |
 | [`serial`](serial) | RS-232; registers the `serial` connection scheme |
 

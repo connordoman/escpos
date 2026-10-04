@@ -193,6 +193,19 @@ func (cp CodePage) Encodes(r rune) bool {
 	return false
 }
 
+// Decode returns the character byte c stands for in code page cp. Bytes
+// above 0x7F in code pages whose layout the package does not know decode
+// as U+FFFD.
+func (cp CodePage) Decode(c byte) rune {
+	if c < utf8.RuneSelf {
+		return rune(c)
+	}
+	if cm := charmaps[cp]; cm != nil {
+		return cm.DecodeByte(c)
+	}
+	return utf8.RuneError
+}
+
 // Printable returns s as [Builder.Text] prints it with code page cp: runes
 // the code page has are kept, others are transliterated to ASCII or replaced
 // with '?', and control characters are removed. complete is false if any
