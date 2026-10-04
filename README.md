@@ -70,6 +70,27 @@ builds need no cgo.
   Control characters other than LF, CR and HT are removed, so untrusted text
   cannot inject commands; use `Raw` for deliberate bytes.
 
+### Optional packages
+
+The root package is a plain ESC/POS SDK. Conveniences live in subpackages of
+the same module, so they are versioned together, and a program only compiles
+the ones it imports.
+
+| Package | |
+|---|---|
+| [`layout`](layout) | Styled, word-wrapped text measured in dots: paragraphs with hanging indents, receipt lines with dot leaders, tables, columns, boxes and rules |
+| [`usb`](usb) | USB through libusb (cgo) |
+| [`serial`](serial) | RS-232 |
+
+```go
+b := escpos.NewBuilder(escpos.PaperWidth80mm)
+b.Initialize()
+w := layout.New(b)
+w.KeyValue("2 × Flat white", "$11.00", ' ', layout.Style{}, layout.Style{})
+w.KeyValue("Subtotal", "$11.00", '.', layout.Style{}, layout.Style{})
+w.KeyValue("TOTAL", "$11.55", ' ', layout.Style{Bold: true, Width: 2, Height: 2}, layout.Style{Bold: true, Width: 2, Height: 2})
+```
+
 ## Connections
 
 Every way of connecting is always available. Auto-detection is an optional

@@ -134,6 +134,8 @@ func (b *Builder) HorizontalRule(r rune) {
 // Columns prints left and right on one line, padding between them so that
 // right is flush with the right edge, followed by a line feed. If they do not
 // fit, they are separated by a single space and the printer wraps the line.
+// It counts runes, ignoring per-character widths; package layout measures
+// text properly and wraps it.
 func (b *Builder) Columns(left, right string) {
 	pad := b.CharactersPerLine() - len([]rune(left)) - len([]rune(right))
 	b.Textln(left + strings.Repeat(" ", max(pad, 1)) + right)
