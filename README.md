@@ -79,6 +79,7 @@ the ones it imports.
 | Package | |
 |---|---|
 | [`layout`](layout) | Styled, word-wrapped text measured in dots: paragraphs with hanging indents, receipt lines with dot leaders, tables, columns, boxes and rules |
+| [`unifont`](unifont) | Prints any Unicode text (emoji, CJK, symbols) as an image in GNU Unifont, for printers whose fonts cover one code page. Adds 1.7 MB, only to programs that import it; the font is under the SIL Open Font License (see its NOTICE) |
 | [`escpostest`](escpostest) | Decodes command streams into readable text (`<ESC E 1>TOTAL⏎`) for testing code that builds jobs |
 | [`usb`](usb) | USB through libusb (cgo); registers the `libusb` connection scheme |
 | [`serial`](serial) | RS-232; registers the `serial` connection scheme |
