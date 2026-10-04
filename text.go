@@ -2,10 +2,13 @@ package escpos
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/unicode/norm"
 )
 
 // CodePage is a character code table selectable with ESC t.
@@ -94,28 +97,128 @@ var charmaps = map[CodePage]*charmap.Charmap{
 	CodePagePC874:      charmap.Windows874,
 }
 
-// asciiFallback replaces common typographic characters that are missing
-// from the active code page.
-var asciiFallback = map[rune]string{
-	' ': " ",   // no-break space
-	'‐': "-",   // hyphen
-	'‑': "-",   // non-breaking hyphen
-	'‒': "-",   // figure dash
-	'–': "-",   // en dash
-	'—': "-",   // em dash
-	'―': "-",   // horizontal bar
-	'‘': "'",   // left single quotation mark
-	'’': "'",   // right single quotation mark
-	'‚': ",",   // single low-9 quotation mark
-	'“': "\"",  // left double quotation mark
-	'”': "\"",  // right double quotation mark
-	'„': "\"",  // double low-9 quotation mark
-	'•': "*",   // bullet
-	'…': "...", // horizontal ellipsis
-	'′': "'",   // prime
-	'″': "\"",  // double prime
-	'−': "-",   // minus sign
-	'€': "EUR", // euro sign
+// transliterations replaces characters missing from a code page with ASCII,
+// for those that Unicode decomposition does not reduce to ASCII.
+var transliterations = map[rune]string{
+	'‐': "-", '‑': "-", '‒': "-", '–': "-", '—': "-", '―': "-", '−': "-",
+	'‘': "'", '’': "'", '‚': ",", '‛': "'", '′': "'", '‹': "<", '›': ">",
+	'“': "\"", '”': "\"", '„': "\"", '‟': "\"", '″': "\"", '«': "<<", '»': ">>",
+	'•': "*", '·': ".", '‣': ">", '◦': "o", '…': "...", '⁄': "/",
+	'×': "x", '÷': "/", '±': "+/-", '°': "deg", '©': "(c)", '®': "(R)", '™': "TM",
+	'€': "EUR", '£': "GBP", '¥': "JPY", '¢': "c", '¡': "!", '¿': "?", '§': "S",
+	'¶': "P", '†': "+", '‡': "++", '→': "->", '←': "<-", '↑': "^", '↓': "v",
+	'⇒': "=>", '⇐': "<=", '≤': "<=", '≥': ">=", '≠': "!=", '≈': "~", '∞': "inf",
+	'ß': "ss", 'æ': "ae", 'Æ': "AE", 'œ': "oe", 'Œ': "OE", 'ø': "o", 'Ø': "O",
+	'ł': "l", 'Ł': "L", 'đ': "d", 'Đ': "D", 'ð': "d", 'Ð': "D", 'þ': "th", 'Þ': "Th",
+	'ı': "i", 'ħ': "h", 'Ħ': "H", 'ŧ': "t", 'Ŧ': "T", 'ŋ': "ng", 'Ŋ': "NG",
+	'✓': "v", '✔': "v", '✗': "x", '✘': "x", '☐': "[ ]", '☑': "[x]", '☒': "[x]",
+	'─': "-", '━': "-", '│': "|", '┃': "|", '═': "=", '║': "|",
+}
+
+// transliterate returns an ASCII rendering of r, or "" if there is none.
+func transliterate(r rune) string {
+	if r < utf8.RuneSelf {
+		return string(r)
+	}
+	if t, ok := transliterations[r]; ok {
+		return t
+	}
+	if unicode.IsSpace(r) {
+		return " "
+	}
+	var out strings.Builder
+	for _, d := range norm.NFKD.String(string(r)) {
+		switch {
+		case d < utf8.RuneSelf:
+			out.WriteRune(d)
+		case unicode.Is(unicode.Mn, d):
+		default:
+			if t, ok := transliterations[d]; ok {
+				out.WriteString(t)
+			} else {
+				return ""
+			}
+		}
+	}
+	return out.String()
+}
+
+// zeroWidth reports whether r prints nothing on its own: combining marks
+// left over after NFC normalisation and format characters such as joiners.
+func zeroWidth(r rune) bool {
+	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf)
+}
+
+// sanitize normalises s to NFC and removes control characters other than
+// LF, CR and HT, so text can never inject commands such as ESC or GS.
+func sanitize(s string) string {
+	s = norm.NFC.String(strings.ToValidUTF8(s, "\uFFFD"))
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1
+	}, s)
+}
+
+// Transliterate converts s to printable ASCII, rewriting characters where it
+// can ("Café — naïve" becomes "Cafe - naive") and using '?' otherwise.
+// Control characters other than LF, CR and HT are removed.
+func Transliterate(s string) string {
+	var b strings.Builder
+	for _, r := range sanitize(s) {
+		if zeroWidth(r) {
+			continue
+		}
+		if t := transliterate(r); t != "" {
+			b.WriteString(t)
+		} else {
+			b.WriteByte('?')
+		}
+	}
+	return b.String()
+}
+
+// Encodes reports whether code page cp has a character for r. ASCII is
+// always encodable; beyond it, only code pages whose layout the package
+// knows encode anything.
+func (cp CodePage) Encodes(r rune) bool {
+	if r < utf8.RuneSelf {
+		return true
+	}
+	if cm := charmaps[cp]; cm != nil {
+		_, ok := cm.EncodeRune(r)
+		return ok
+	}
+	return false
+}
+
+// Printable returns s as [Builder.Text] prints it with code page cp: runes
+// the code page has are kept, others are transliterated to ASCII or replaced
+// with '?', and control characters are removed. complete is false if any
+// rune had to be replaced with '?', meaning the printer's fonts cannot show
+// s even approximately (emoji or CJK in a Latin code page, for example).
+//
+// Printable is useful for measuring text before printing it, since every
+// returned rune occupies one character cell.
+func (cp CodePage) Printable(s string) (printed string, complete bool) {
+	var b strings.Builder
+	complete = true
+	for _, r := range sanitize(s) {
+		switch {
+		case zeroWidth(r):
+		case cp.Encodes(r) && (r >= 0x20 || r == '\n' || r == '\r' || r == '\t'):
+			b.WriteRune(r)
+		default:
+			if t := transliterate(r); t != "" {
+				b.WriteString(t)
+			} else {
+				b.WriteByte('?')
+				complete = false
+			}
+		}
+	}
+	return b.String(), complete
 }
 
 // SelectCodePage selects a character code table (ESC t n). Subsequent
@@ -132,10 +235,19 @@ func (b *Builder) SelectCodePage(cp CodePage) {
 // printer.
 func (b *Builder) SetTextEncoder(e *encoding.Encoder) { b.encoder = e }
 
+// ActiveCodePage returns the code page selected with [Builder.SelectCodePage]
+// (or reset by [Builder.Initialize]).
+func (b *Builder) ActiveCodePage() CodePage { return b.codePage }
+
 // Text appends s encoded for the active code page. Runes the code page cannot
 // represent are replaced with a close ASCII equivalent where one exists, or
-// '?' otherwise.
+// '?' otherwise; see [CodePage.Printable].
+//
+// Control characters other than LF, CR and HT are removed, so text from
+// users can never smuggle printer commands (ESC, GS, ...) into a job. Use
+// [Builder.Raw] to send bytes deliberately.
 func (b *Builder) Text(s string) {
+	s = sanitize(s)
 	if b.encoder != nil {
 		if out, err := b.encoder.String(s); err == nil {
 			b.buf = append(b.buf, out...)
@@ -154,7 +266,10 @@ func (b *Builder) Text(s string) {
 				continue
 			}
 		}
-		if alt, ok := asciiFallback[r]; ok {
+		if zeroWidth(r) {
+			continue
+		}
+		if alt := transliterate(r); alt != "" {
 			b.buf = append(b.buf, alt...)
 			continue
 		}

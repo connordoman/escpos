@@ -111,3 +111,21 @@ func TestPrintImageBands(t *testing.T) {
 		t.Errorf("got %d bytes, want %d", len(out), 3*8+5*2)
 	}
 }
+
+func TestPrintImageAlign(t *testing.T) {
+	img := image.NewGray(image.Rect(0, 0, 16, 1)) // black, 16 dots wide
+	for _, tc := range []struct {
+		align Align
+		width int // raster bytes
+		first int // first black byte
+	}{{AlignLeft, 2, 0}, {AlignCenter, 72, 35}, {AlignRight, 72, 70}} {
+		b := NewBuilder(PaperWidth80mm)
+		if err := b.PrintImage(img, ImageOptions{Align: tc.align}); err != nil {
+			t.Fatal(err)
+		}
+		data := b.Bytes()[8:]
+		if len(data) != tc.width || data[tc.first] != 0xFF || data[tc.first+1] != 0xFF {
+			t.Errorf("align %d: % X", tc.align, data)
+		}
+	}
+}

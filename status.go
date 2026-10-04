@@ -3,7 +3,10 @@ package escpos
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"strings"
 )
 
 // StatusType selects the status returned by [Printer.RealTimeStatus].
@@ -82,6 +85,40 @@ type Status struct {
 func (s Status) Ready() bool {
 	return !s.Offline.CoverOpen() && !s.Offline.Error() && !s.Paper.PaperEnd() &&
 		!s.Error.AutoCutterError() && !s.Error.UnrecoverableError() && !s.Error.AutoRecoverableError()
+}
+
+// Problems lists what stops the printer from printing, such as
+// "cover open" or "out of paper". It is empty when the printer is ready.
+func (s Status) Problems() []string {
+	var p []string
+	if s.Offline.CoverOpen() {
+		p = append(p, "cover open")
+	}
+	if s.Paper.PaperEnd() {
+		p = append(p, "out of paper")
+	}
+	if s.Error.AutoCutterError() {
+		p = append(p, "cutter error")
+	}
+	if s.Error.UnrecoverableError() {
+		p = append(p, "unrecoverable error")
+	}
+	if s.Error.AutoRecoverableError() {
+		p = append(p, "auto-recoverable error (overheated?)")
+	}
+	if len(p) == 0 && s.Offline.Error() {
+		p = append(p, "error")
+	}
+	return p
+}
+
+// String summarises the status: "ready", or its problems separated by
+// commas.
+func (s Status) String() string {
+	if p := s.Problems(); len(p) > 0 {
+		return strings.Join(p, ", ")
+	}
+	return "ready"
 }
 
 // RealTimeStatus requests one real-time status byte (DLE EOT n). The printer
@@ -280,6 +317,46 @@ func (b *Builder) SetProcessIDResponse(id [4]byte) error {
 	}
 	b.cmd(GS, '(', 'H', 6, 0, 48, 48, id[0], id[1], id[2], id[3])
 	return nil
+}
+
+// ErrUnconfirmed is returned by [Printer.SendConfirmed] when the data was
+// sent but the printer did not confirm processing it in time.
+var ErrUnconfirmed = errors.New("escpos: data sent but the printer did not confirm it")
+
+// SendConfirmed sends data followed by a process ID request
+// ([Builder.SetProcessIDResponse]) and waits for the printer to report the
+// ID, which it does once it has processed everything before it. A nil error
+// therefore means the job has been printed, not just sent.
+//
+// ctx bounds the whole call; printing a long job can take several seconds,
+// so allow for it. If the connection cannot be read from, nothing is sent
+// and [ErrNotReadable] is returned, so callers can fall back to
+// [Printer.SendRaw]. If the data was sent but no confirmation arrived, the
+// error wraps [ErrUnconfirmed].
+func (p *Printer) SendConfirmed(ctx context.Context, data []byte) error {
+	if _, ok := p.conn.(io.Reader); !ok {
+		return ErrNotReadable
+	}
+	n := p.processSeq.Add(1)
+	id := [4]byte{}
+	copy(id[:], fmt.Sprintf("%04d", n%10000))
+	marker := NewBuilder(p.paperWidth)
+	marker.SetProcessIDResponse(id)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, err := p.write(ctx, append(append([]byte{}, data...), marker.buf...)); err != nil {
+		return err
+	}
+	for {
+		resp, err := p.readUntilNUL(ctx)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrUnconfirmed, err)
+		}
+		if bytes.HasSuffix(resp, id[:]) {
+			return nil
+		}
+	}
 }
 
 // WaitProcessID reads responses until the process ID set with

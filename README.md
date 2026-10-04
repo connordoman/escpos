@@ -57,14 +57,18 @@ builds need no cgo.
   `Flush`) and can also `Send` separately built jobs. A web server can build
   each request's job on its own and let `Send` serialize access to the device.
   `Printer` also handles the commands that need a reply: real-time status,
-  printer ID and process ID.
+  printer ID and process ID. `SendConfirmed` sends a job and waits for the
+  printer to report it processed, so success means printed, not just sent.
 - **Connections** are any `io.Writer`. If the connection is also an
   `io.Reader`, status queries work. If it implements `WriteContext`/`ReadContext`
   or `SetWriteDeadline`/`SetReadDeadline`, the `context.Context` passed to each
   call bounds its I/O.
 - **Text** is encoded for the selected code page (CP437 by default), so
   `"café ─"` prints correctly. Characters the code page lacks are replaced
-  with ASCII where possible (`“”` → `""`, `—` → `-`) and with `?` otherwise.
+  with ASCII where possible (`“”` → `""`, `—` → `-`, `Ł` → `L`) and with `?`
+  otherwise; `CodePage.Printable` shows the result in advance, for measuring.
+  Control characters other than LF, CR and HT are removed, so untrusted text
+  cannot inject commands; use `Raw` for deliberate bytes.
 
 ## Connections
 

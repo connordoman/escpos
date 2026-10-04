@@ -272,7 +272,11 @@ func TestText(t *testing.T) {
 		{"fallback", nil, "“hi” — ok…", []byte(`"hi" - ok...`)},
 		{"unknown", nil, "日", []byte("?")},
 		{"cp1252", new(CodePageWPC1252), "€", []byte{0x1B, 0x74, 16, 0x80}},
-		{"unmapped code page", new(CodePageThai), "é", []byte{0x1B, 0x74, 26, '?'}},
+		{"unmapped code page", new(CodePageThai), "é", []byte{0x1B, 0x74, 26, 'e'}},
+		{"controls removed", nil, "a\x1b@b\x1dV\x00c\td\n", []byte("a@bVc\td\n")},
+		{"decomposed", nil, "e\u0301", []byte{0x82}},
+		{"transliterated", nil, "Łódź straße", []byte{'L', 0xA2, 'd', 'z', ' ', 's', 't', 'r', 'a', 0xE1, 'e'}},
+		{"emoji", nil, "ok 😀\u200d", []byte("ok ?")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -285,6 +289,28 @@ func TestText(t *testing.T) {
 				t.Errorf("got % X, want % X", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPrintable(t *testing.T) {
+	for _, tt := range []struct {
+		cp       CodePage
+		in, want string
+		complete bool
+	}{
+		{CodePagePC437, "café ─", "café ─", true},
+		{CodePagePC437, "“naïve” Łódź", `"naïve" Lódz`, true},
+		{CodePagePC437, "日本 😀", "?? ?", false},
+		{CodePagePC437, "a\x1bb", "ab", true},
+		{CodePageThai, "é", "e", true},
+	} {
+		got, complete := tt.cp.Printable(tt.in)
+		if got != tt.want || complete != tt.complete {
+			t.Errorf("%d.Printable(%q) = %q, %v; want %q, %v", tt.cp, tt.in, got, complete, tt.want, tt.complete)
+		}
+	}
+	if got := Transliterate("Café — “naïve”…\x1b"); got != `Cafe - "naive"...` {
+		t.Errorf("Transliterate = %q", got)
 	}
 }
 

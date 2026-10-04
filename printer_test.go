@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -244,5 +245,48 @@ func TestFlushHonoursContext(t *testing.T) {
 	defer cancel()
 	if _, err := p.Flush(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("got %v, want deadline exceeded", err)
+	}
+}
+
+func TestSendConfirmed(t *testing.T) {
+	conn, received, mu := fakePrinter(t, func(cmd []byte) []byte {
+		if i := bytes.Index(cmd, []byte{GS, '(', 'H'}); i >= 0 && len(cmd) >= i+11 {
+			return append([]byte{0x37, 0x22}, append(cmd[i+7:i+11], 0)...)
+		}
+		return nil
+	})
+	p := New(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := p.SendConfirmed(ctx, []byte("job\n")); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	got := received.String()
+	mu.Unlock()
+	if !strings.HasPrefix(got, "job\n\x1d(H") {
+		t.Errorf("sent %q", got)
+	}
+}
+
+func TestSendConfirmedUnconfirmed(t *testing.T) {
+	conn, _, _ := fakePrinter(t, func([]byte) []byte { return nil })
+	p := New(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := p.SendConfirmed(ctx, []byte("job\n")); !errors.Is(err, ErrUnconfirmed) {
+		t.Errorf("got %v, want ErrUnconfirmed", err)
+	}
+	if err := New(io.Discard).SendConfirmed(context.Background(), nil); !errors.Is(err, ErrNotReadable) {
+		t.Errorf("write-only: got %v", err)
+	}
+}
+
+func TestStatusString(t *testing.T) {
+	if s := (Status{Printer: 0x16, Offline: 0x12, Error: 0x12, Paper: 0x12}).String(); s != "ready" {
+		t.Errorf("ready status: %q", s)
+	}
+	if s := (Status{Offline: 0x12 | 0x04 | 0x40, Paper: 0x12 | 0x60}).String(); s != "cover open, out of paper" {
+		t.Errorf("got %q", s)
 	}
 }

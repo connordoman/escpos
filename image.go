@@ -127,6 +127,14 @@ func (b *Builder) PrintImage(img image.Image, opts ImageOptions) error {
 	if bm.Width == 0 || bm.Height == 0 {
 		return invalid("GS v 0", "image is empty")
 	}
+	if paper := b.PaperWidth(); bm.Width < paper {
+		switch opts.Align {
+		case AlignCenter, 49:
+			bm = bm.pad((paper-bm.Width)/2, paper)
+		case AlignRight, 50:
+			bm = bm.pad(paper-bm.Width, paper)
+		}
+	}
 	wb, data := bm.Raster()
 	if wb > 128 {
 		return invalid("GS v 0", "image is %d dots wide, maximum is 1024", bm.Width)
@@ -223,6 +231,11 @@ type ImageOptions struct {
 	// BandHeight is the maximum number of rows sent per raster command by
 	// [Builder.PrintImage]. Zero or values above 4095 mean 4095.
 	BandHeight int
+
+	// Align positions an image narrower than the paper in
+	// [Builder.PrintImage]. It is applied by padding the image with white,
+	// so it works on printers that ignore ESC a for raster images.
+	Align Align
 }
 
 // Bitmap is a black and white image.
@@ -308,6 +321,16 @@ func luminance(r, g, b, a uint32) float32 {
 	white := float32(0xffff - a)
 	y := 0.299*(float32(r)+white) + 0.587*(float32(g)+white) + 0.114*(float32(b)+white)
 	return y / 0xffff * 255
+}
+
+// pad returns m placed left dots from the left of a white bitmap width
+// dots wide.
+func (m *Bitmap) pad(left, width int) *Bitmap {
+	out := &Bitmap{Width: width, Height: m.Height, pix: make([]bool, width*m.Height)}
+	for y := range m.Height {
+		copy(out.pix[y*width+left:], m.pix[y*m.Width:(y+1)*m.Width])
+	}
+	return out
 }
 
 // At reports whether the dot at (x, y) prints.

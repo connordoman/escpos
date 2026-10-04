@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,6 +40,8 @@ type Printer struct {
 
 	rbuf     []byte          // bytes read but not yet consumed
 	inflight chan readResult // pending read on a connection without deadlines
+
+	processSeq atomic.Uint32 // IDs for SendConfirmed
 }
 
 type readResult struct {
